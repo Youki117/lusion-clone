@@ -1,0 +1,12 @@
+# Dependencies
+/node_modules
+
+# Editor history
+.history/
+
+# Logs
+logs
+*.log
+
+# Environment variables
+.env

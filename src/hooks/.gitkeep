@@ -1,0 +1,9 @@
+# Hooks Directory
+
+This directory contains custom React hooks for:
+- Knowledge graph state management
+- AI chat functionality
+- User progress tracking
+- Learning data management
+
+Hooks follow React best practices and integrate with the existing Context providers.

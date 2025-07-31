@@ -1,0 +1,10 @@
+# Education UI Components
+
+This directory contains educational-specific UI components:
+- AIChat.tsx - AI conversation interface
+- ModelViewer.tsx - 3D/2D educational model viewer
+- PhETSimulation.tsx - PhET simulator integration
+- Sketchfab3DViewer.tsx - Sketchfab model viewer
+- ProgressTracker.tsx - Learning progress display
+
+Components follow existing UI patterns and integrate with starfield theme.

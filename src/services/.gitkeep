@@ -1,0 +1,9 @@
+# Services Directory
+
+This directory contains service layer implementations for:
+- AI service interfaces
+- Knowledge graph data services  
+- User management services
+- External API integrations
+
+Services follow the existing project patterns and provide clean interfaces for data access and business logic.

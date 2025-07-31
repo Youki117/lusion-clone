@@ -1,0 +1,9 @@
+# Types Directory
+
+This directory contains TypeScript type definitions for:
+- Knowledge graph data structures
+- User and learning progress types
+- AI service interfaces
+- Educational model types
+
+Types are designed to support 3D visualization needs and maintain consistency with existing project patterns.

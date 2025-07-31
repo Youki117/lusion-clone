@@ -1,0 +1,9 @@
+# Educational Models Data
+
+This directory contains 3D/2D educational model resources:
+- Model metadata and URLs
+- PhET simulation configurations
+- Sketchfab model references
+- Interactive demonstration settings
+
+Resources support integration with external educational platforms and maintain loading performance.
