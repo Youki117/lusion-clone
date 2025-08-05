@@ -11,9 +11,7 @@ import {
   BookOpen, 
   Target,
   Loader2,
-  X,
-  Minimize2,
-  Maximize2
+  X
 } from 'lucide-react'
 import { AIService } from '@/services/aiService'
 
@@ -42,7 +40,7 @@ export function AIQueryPanel({
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -105,10 +103,16 @@ export function AIQueryPanel({
     try {
       // 构建知识点上下文
       const context = {
-        knowledgePoint: knowledgePointTitle,
-        subject: '数学',
-        difficulty: 'basic' as const,
-        description: `关于${knowledgePointTitle}的学习内容`
+        relatedPoints: [],
+        userProgress: {
+          subjectProgress: [],
+          totalPoints: 0,
+          level: 1,
+          achievements: [],
+          streakDays: 0,
+          lastStudyDate: new Date()
+        },
+        difficulty: 'basic' as const
       }
 
       // 调用真实的AI服务
@@ -167,14 +171,12 @@ export function AIQueryPanel({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className={`flex flex-col bg-gradient-to-br from-indigo-900/95 to-purple-900/95 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl ${className}`}
+          className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] h-[600px] bg-gradient-to-br from-indigo-900/95 to-purple-900/95 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl flex flex-col z-50 ${className}`}
           initial={{ scale: 0.8, opacity: 0, y: 20 }}
           animate={{
             scale: 1,
             opacity: 1,
-            y: 0,
-            width: isMinimized ? 80 : 400,
-            height: isMinimized ? 60 : 600
+            y: 0
           }}
           exit={{ scale: 0.8, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
@@ -184,161 +186,134 @@ export function AIQueryPanel({
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Bot className="w-5 h-5 text-indigo-400" />
-                {!isMinimized && (
-                  <h3 className="text-sm font-medium text-white">AI助手</h3>
-                )}
+                <h3 className="text-sm font-medium text-white">AI助手</h3>
               </div>
-              <div className="flex items-center space-x-1">
-                {!isMinimized && (
-                  <button
-                    onClick={() => setIsMinimized(true)}
-                    className="p-1.5 hover:bg-white/10 rounded-md transition-colors"
-                    title="最小化"
-                  >
-                    <Minimize2 className="w-4 h-4 text-gray-400" />
-                  </button>
-                )}
-                {isMinimized ? (
-                  <button
-                    onClick={() => setIsMinimized(false)}
-                    className="p-1.5 hover:bg-white/10 rounded-md transition-colors"
-                    title="展开"
-                  >
-                    <Maximize2 className="w-4 h-4 text-gray-400" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={onClose}
-                    className="p-1.5 hover:bg-white/10 rounded-md transition-colors"
-                    title="关闭"
-                  >
-                    <X className="w-4 h-4 text-gray-400" />
-                  </button>
-                )}
-              </div>
+              <button
+                onClick={onClose}
+                className="p-1.5 hover:bg-white/10 rounded-md transition-colors"
+                title="关闭"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
             </div>
           </div>
 
-          {!isMinimized && (
-            <>
-              {/* 快捷选项 */}
-              {messages.length === 0 && (
-                <div className="flex-shrink-0 p-4 border-b border-white/10">
-                  <h4 className="text-xs font-medium text-gray-400 mb-3">快捷提问</h4>
-                  <div className="space-y-2">
-                    {quickOptions.map((option, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleQuickOption(option.prompt)}
-                        className="w-full flex items-center space-x-2 p-2 text-left text-sm text-gray-300 hover:bg-white/5 rounded-lg transition-colors"
-                      >
-                        <option.icon className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                        <span className="truncate">{option.text}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 消息列表 */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 chat-messages">
-                {messages.length === 0 && (
-                  <div className="text-center text-gray-400 text-sm py-8">
-                    <Bot className="w-8 h-8 mx-auto mb-2 text-indigo-400" />
-                    <p>你好！我是AI学习助手</p>
-                    <p className="text-xs mt-1">有什么关于"{knowledgePointTitle}"的问题吗？</p>
-                  </div>
-                )}
-
-                {messages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div className={`max-w-[85%] ${message.type === 'user' ? 'order-2' : 'order-1'}`}>
-                      <div className={`flex items-start space-x-2 ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          message.type === 'user' 
-                            ? 'bg-blue-500' 
-                            : 'bg-indigo-500'
-                        }`}>
-                          {message.type === 'user' ? (
-                            <User className="w-3 h-3 text-white" />
-                          ) : (
-                            <Bot className="w-3 h-3 text-white" />
-                          )}
-                        </div>
-                        <div className={`relative group ${
-                          message.type === 'user' 
-                            ? 'bg-blue-600/20 border border-blue-500/30' 
-                            : 'bg-white/5 border border-white/10'
-                        } rounded-lg p-3`}>
-                          <div className="text-sm text-white whitespace-pre-wrap">
-                            {message.content}
-                          </div>
-                          <button
-                            onClick={() => handleCopyMessage(message.content)}
-                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all"
-                            title="复制"
-                          >
-                            <Copy className="w-3 h-3 text-gray-400" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-
-                {isLoading && (
-                  <motion.div
-                    className="flex justify-start"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center">
-                        <Bot className="w-3 h-3 text-white" />
-                      </div>
-                      <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                        <div className="flex items-center space-x-2">
-                          <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                          <span className="text-sm text-gray-400">AI正在思考...</span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* 输入区域 */}
-              <div className="flex-shrink-0 p-4 border-t border-white/10">
-                <div className="flex space-x-2">
-                  <textarea
-                    ref={inputRef}
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="输入你的问题..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50"
-                    rows={2}
-                    disabled={isLoading}
-                  />
+          {/* 快捷选项 */}
+          {messages.length === 0 && (
+            <div className="flex-shrink-0 p-4 border-b border-white/10">
+              <h4 className="text-xs font-medium text-gray-400 mb-3">快捷提问</h4>
+              <div className="space-y-2">
+                {quickOptions.map((option, index) => (
                   <button
-                    onClick={handleSendMessage}
-                    disabled={!inputValue.trim() || isLoading}
-                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center justify-center"
+                    key={index}
+                    onClick={() => handleQuickOption(option.prompt)}
+                    className="w-full flex items-center space-x-2 p-2 text-left text-sm text-gray-300 hover:bg-white/5 rounded-lg transition-colors"
                   >
-                    <Send className="w-4 h-4 text-white" />
+                    <option.icon className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                    <span className="truncate">{option.text}</span>
                   </button>
-                </div>
+                ))}
               </div>
-            </>
+            </div>
           )}
+
+          {/* 消息列表 */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 chat-messages">
+            {messages.length === 0 && (
+              <div className="text-center text-gray-400 text-sm py-8">
+                <Bot className="w-8 h-8 mx-auto mb-2 text-indigo-400" />
+                <p>你好！我是AI学习助手</p>
+                <p className="text-xs mt-1">有什么关于"{knowledgePointTitle}"的问题吗？</p>
+              </div>
+            )}
+
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className={`max-w-[85%] ${message.type === 'user' ? 'order-2' : 'order-1'}`}>
+                  <div className={`flex items-start space-x-2 ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      message.type === 'user' 
+                        ? 'bg-blue-500' 
+                        : 'bg-indigo-500'
+                    }`}>
+                      {message.type === 'user' ? (
+                        <User className="w-3 h-3 text-white" />
+                      ) : (
+                        <Bot className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                    <div className={`relative group ${
+                      message.type === 'user' 
+                        ? 'bg-blue-600/20 border border-blue-500/30' 
+                        : 'bg-white/5 border border-white/10'
+                    } rounded-lg p-3`}>
+                      <div className="text-sm text-white whitespace-pre-wrap">
+                        {message.content}
+                      </div>
+                      <button
+                        onClick={() => handleCopyMessage(message.content)}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-white/10 rounded transition-all"
+                        title="复制"
+                      >
+                        <Copy className="w-3 h-3 text-gray-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+
+            {isLoading && (
+              <motion.div
+                className="flex justify-start"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center">
+                    <Bot className="w-3 h-3 text-white" />
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-3">
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                      <span className="text-sm text-gray-400">AI正在思考...</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* 输入区域 */}
+          <div className="flex-shrink-0 p-4 border-t border-white/10">
+            <div className="flex space-x-2">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="输入你的问题..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50"
+                rows={2}
+                disabled={isLoading}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || isLoading}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center justify-center"
+              >
+                <Send className="w-4 h-4 text-white" />
+              </button>
+            </div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import * as THREE from 'node_modules/@types/three'
+import * as THREE from 'three'
 
 interface SpaceWarpBackgroundProps {
   progress: number

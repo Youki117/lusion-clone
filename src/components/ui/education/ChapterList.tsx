@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useKnowledgeGraph } from '@/components/providers/KnowledgeGraphProvider'
 import {
   ChevronDown,
   ChevronRight,
@@ -27,6 +28,7 @@ interface ChapterListProps {
   subjectId: string
   onKnowledgePointClick: (knowledgePoint: KnowledgePointWithStatus) => void
   onProgressUpdate?: (progress: LearningProgress) => void
+  onSearchResultsUpdate?: (results: { filtered: number; total: number }) => void
   className?: string
 }
 
@@ -121,7 +123,11 @@ function organizeSubjectData(subjectId: string): BookLevel[] {
       // 查找对应的知识点数据
       const matchingChapter = knowledgePointsData.find(kp => {
         const kpTitle = kp.name.split('：')[1] || kp.name
-        return kpTitle.includes(chapterTitle) || chapterTitle.includes(kpTitle)
+        // 更精确的匹配逻辑
+        return kpTitle === chapterTitle || 
+               kpTitle.includes(chapterTitle) || 
+               chapterTitle.includes(kpTitle) ||
+               kpTitle.replace(/第[一二三四五六七八九十]+章：/, '') === chapterTitle
       })
 
       // 为知识点添加学习状态
@@ -303,7 +309,7 @@ function getStatusStyles(status: LearningStatus) {
 }
 
 // 书籍组件
-function BookItem({ book, onKnowledgePointClick, isExpanded, onToggle, expandedChapters, onChapterToggle }: BookItemProps) {
+function BookItem({ book, onKnowledgePointClick, isExpanded, onToggle, expandedChapters, onChapterToggle, searchQuery = '' }: BookItemProps & { searchQuery?: string }) {
   const statusStyles = getStatusStyles(book.status)
   const StatusIcon = statusStyles.icon
 
@@ -381,6 +387,7 @@ function BookItem({ book, onKnowledgePointClick, isExpanded, onToggle, expandedC
                   onKnowledgePointClick={onKnowledgePointClick}
                   isExpanded={expandedChapters.has(chapter.id)}
                   onToggle={() => onChapterToggle(chapter.id)}
+                  searchQuery={searchQuery}
                 />
               ))}
             </div>
@@ -394,10 +401,12 @@ function BookItem({ book, onKnowledgePointClick, isExpanded, onToggle, expandedC
 // 知识点组件
 function KnowledgePointItem({
   knowledgePoint,
-  onClick
+  onClick,
+  searchQuery = ''
 }: {
   knowledgePoint: KnowledgePointWithStatus
   onClick: () => void
+  searchQuery?: string
 }) {
   const statusStyles = getStatusStyles(knowledgePoint.status)
   const StatusIcon = statusStyles.icon
@@ -433,7 +442,21 @@ function KnowledgePointItem({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3 flex-1">
           <StatusIcon className={`w-4 h-4 ${statusStyles.iconColor}`} />
-          <h5 className="text-white font-medium text-sm">{knowledgePoint.title}</h5>
+          <h5 className="text-white font-medium text-sm">
+            {searchQuery && knowledgePoint.title.toLowerCase().includes(searchQuery.toLowerCase()) ? (
+              <span>
+                {knowledgePoint.title.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, index) => 
+                  part.toLowerCase() === searchQuery.toLowerCase() ? (
+                    <mark key={index} className="bg-yellow-400/30 text-yellow-200 px-1 rounded">
+                      {part}
+                    </mark>
+                  ) : part
+                )}
+              </span>
+            ) : (
+              knowledgePoint.title
+            )}
+          </h5>
           <div className={`px-2 py-1 rounded-full text-xs border ${getDifficultyColor(knowledgePoint.difficulty)}`}>
             {getDifficultyText(knowledgePoint.difficulty)}
           </div>
@@ -468,7 +491,7 @@ function KnowledgePointItem({
   )
 }
 
-function ChapterItem({ chapter, onKnowledgePointClick, isExpanded, onToggle }: ChapterItemProps) {
+function ChapterItem({ chapter, onKnowledgePointClick, isExpanded, onToggle, searchQuery = '' }: ChapterItemProps & { searchQuery?: string }) {
   const statusStyles = getStatusStyles(chapter.status)
   const StatusIcon = statusStyles.icon
 
@@ -523,8 +546,8 @@ function ChapterItem({ chapter, onKnowledgePointClick, isExpanded, onToggle }: C
                 <KnowledgePointItem
                   key={knowledgePoint.id}
                   knowledgePoint={knowledgePoint}
+                  searchQuery={searchQuery}
                   onClick={() => {
-                    console.log('知识点点击:', knowledgePoint.title)
                     onKnowledgePointClick(knowledgePoint)
                   }}
                 />
@@ -537,11 +560,91 @@ function ChapterItem({ chapter, onKnowledgePointClick, isExpanded, onToggle }: C
   )
 }
 
-export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate, className = '' }: ChapterListProps) {
+export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate, onSearchResultsUpdate, className = '' }: ChapterListProps) {
   const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set())
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set())
-  const books = organizeSubjectData(subjectId)
-  const learningProgress = useMemo(() => calculateLearningProgress(books), [books])
+  const { searchQuery, filteredNodes } = useKnowledgeGraph()
+  
+  // 根据搜索查询过滤知识点
+  const filteredBooks = useMemo(() => {
+    const books = organizeSubjectData(subjectId)
+    
+    if (!searchQuery.trim()) {
+      return books
+    }
+    
+    return books.map(book => ({
+      ...book,
+      chapters: book.chapters.map(chapter => ({
+        ...chapter,
+        knowledgePoints: chapter.knowledgePoints.filter(kp => 
+          kp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          kp.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          kp.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+        )
+      })).filter(chapter => chapter.knowledgePoints.length > 0)
+    })).filter(book => book.chapters.length > 0)
+  }, [subjectId, searchQuery])
+  
+  const learningProgress = useMemo(() => calculateLearningProgress(filteredBooks), [filteredBooks])
+
+  // 计算搜索结果统计
+  const searchResults = useMemo(() => {
+    const totalKnowledgePoints = filteredBooks.reduce((total, book) => 
+      total + book.chapters.reduce((chTotal, chapter) => chTotal + chapter.knowledgePoints.length, 0), 0
+    )
+    
+    // 获取所有知识点的总数（未过滤的）
+    const allBooks = organizeSubjectData(subjectId)
+    const totalAllKnowledgePoints = allBooks.reduce((total, book) => 
+      total + book.chapters.reduce((chTotal, chapter) => chTotal + chapter.knowledgePoints.length, 0), 0
+    )
+    
+    // 调试信息
+    if (searchQuery.trim()) {
+      console.log('搜索统计:', {
+        searchQuery,
+        filteredBooks: filteredBooks.length,
+        totalKnowledgePoints,
+        totalAllKnowledgePoints,
+        books: filteredBooks.map(book => ({
+          name: book.name,
+          chapters: book.chapters.length,
+          knowledgePoints: book.chapters.reduce((sum, ch) => sum + ch.knowledgePoints.length, 0)
+        }))
+      })
+    }
+    
+    return {
+      filtered: totalKnowledgePoints,
+      total: totalAllKnowledgePoints
+    }
+  }, [filteredBooks, subjectId, searchQuery])
+
+  // 当搜索结果变化时，通知父组件
+  React.useEffect(() => {
+    if (onSearchResultsUpdate) {
+      onSearchResultsUpdate(searchResults)
+    }
+  }, [searchResults, onSearchResultsUpdate])
+
+  // 当有搜索查询时，自动展开包含匹配知识点的章节
+  React.useEffect(() => {
+    if (searchQuery.trim()) {
+      const matchingBooks = new Set<string>()
+      const matchingChapters = new Set<string>()
+      
+      filteredBooks.forEach(book => {
+        matchingBooks.add(book.id)
+        book.chapters.forEach(chapter => {
+          matchingChapters.add(chapter.id)
+        })
+      })
+      
+      setExpandedBooks(matchingBooks)
+      setExpandedChapters(matchingChapters)
+    }
+  }, [searchQuery, filteredBooks])
 
   // 当进度数据变化时，通知父组件
   React.useEffect(() => {
@@ -571,8 +674,8 @@ export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate
   }
 
   const expandAll = () => {
-    setExpandedBooks(new Set(books.map(b => b.id)))
-    setExpandedChapters(new Set(books.flatMap(b => b.chapters.map(c => c.id))))
+    setExpandedBooks(new Set(filteredBooks.map(b => b.id)))
+    setExpandedChapters(new Set(filteredBooks.flatMap(b => b.chapters.map(c => c.id))))
   }
 
   const collapseAll = () => {
@@ -580,18 +683,32 @@ export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate
     setExpandedChapters(new Set())
   }
 
-  if (books.length === 0) {
+  if (filteredBooks.length === 0) {
     return (
       <div className={`${className}`}>
         <div className="text-center py-12">
           <BookOpen className="w-16 h-16 text-gray-500 mx-auto mb-4 opacity-50" />
-          <h3 className="text-xl font-semibold text-white mb-2">暂无章节内容</h3>
-          <p className="text-gray-400 mb-4">
-            该学科的知识点内容正在准备中，敬请期待！
-          </p>
-          <div className="text-sm text-gray-500">
-            💡 提示：你可以先体验其他已有内容的学科
-          </div>
+          {searchQuery.trim() ? (
+            <>
+              <h3 className="text-xl font-semibold text-white mb-2">未找到相关知识点</h3>
+              <p className="text-gray-400 mb-4">
+                没有找到包含 "{searchQuery}" 的知识点内容
+              </p>
+              <div className="text-sm text-gray-500">
+                💡 提示：尝试使用其他关键词搜索
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 className="text-xl font-semibold text-white mb-2">暂无章节内容</h3>
+              <p className="text-gray-400 mb-4">
+                该学科的知识点内容正在准备中，敬请期待！
+              </p>
+              <div className="text-sm text-gray-500">
+                💡 提示：你可以先体验其他已有内容的学科
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
@@ -607,7 +724,15 @@ export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate
             <span>学科内容</span>
           </h2>
           <p className="text-gray-400 text-sm">
-            共 {books.length} 个教材，{learningProgress.totalChapters} 个章节，{learningProgress.totalKnowledgePoints} 个知识点
+            {searchQuery.trim() ? (
+              <>
+                搜索 "{searchQuery}" 找到 {filteredBooks.length} 个教材，{learningProgress.totalChapters} 个章节，{learningProgress.totalKnowledgePoints} 个知识点
+              </>
+            ) : (
+              <>
+                共 {filteredBooks.length} 个教材，{learningProgress.totalChapters} 个章节，{learningProgress.totalKnowledgePoints} 个知识点
+              </>
+            )}
           </p>
         </div>
 
@@ -633,7 +758,7 @@ export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate
 
       {/* 三级层次结构：教材 → 章节 → 知识点 */}
       <div className="space-y-4">
-        {books.map((book) => (
+        {filteredBooks.map((book) => (
           <BookItem
             key={book.id}
             book={book}
@@ -642,6 +767,7 @@ export function ChapterList({ subjectId, onKnowledgePointClick, onProgressUpdate
             onToggle={() => toggleBook(book.id)}
             expandedChapters={expandedChapters}
             onChapterToggle={toggleChapter}
+            searchQuery={searchQuery}
           />
         ))}
       </div>

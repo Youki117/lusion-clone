@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>3D Educational Clusters Demo</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+                margin: 0;
+                background-color: #000000;
+                color: #fff;
+                overflow: hidden;
+                font-family: 'Arial', sans-serif;
+            }
+            #info {
+                position: absolute;
+                top: 10px;
+                width: 100%;
+                text-align: center;
+                z-index: 100;
+                display:block;
+                font-family: Monospace;
+                font-size: 14px;
+            }
+            #subjectInfo {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                z-index: 100;
+                background: rgba(0,0,0,0.7);
+                padding: 10px;
+                border-radius: 5px;
+                display: none;
+            }
+            #controls {
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                z-index: 100;
+                display: flex;
+                gap: 10px;
+            }
+            .mode-button {
+                background: rgba(255,255,255,0.1);
+                border: 2px solid rgba(255,255,255,0.3);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-family: 'Arial', sans-serif;
+                font-size: 12px;
+                transition: all 0.3s ease;
+                backdrop-filter: blur(10px);
+            }
+            .mode-button:hover {
+                background: rgba(255,255,255,0.2);
+                border-color: rgba(255,255,255,0.5);
+            }
+            .mode-button.active {
+                background: rgba(0,255,255,0.3);
+                border-color: rgba(0,255,255,0.8);
+                box-shadow: 0 0 15px rgba(0,255,255,0.5);
+            }
+            #wheelHint {
+                position: absolute;
+                bottom: 20px;
+                right: 20px;
+                z-index: 100;
+                background: rgba(0,0,0,0.7);
+                padding: 8px 12px;
+                border-radius: 5px;
+                font-size: 12px;
+                display: none;
+                border: 1px solid rgba(0,255,255,0.5);
+            }
+            #modeInfo {
+                position: absolute;
+                top: 60px;
+                right: 20px;
+                z-index: 100;
+                background: rgba(0,0,0,0.5);
+                padding: 6px 10px;
+                border-radius: 5px;
+                font-size: 11px;
+                color: rgba(255,255,255,0.7);
+            }
+		</style>
+	</head>
+	<body>
+        <div id="info">3D Educational Knowledge Clusters - Hover to explore</div>
+        <div id="controls">
+            <button id="scatterMode" class="mode-button active">散落模式</button>
+            <button id="lineMode" class="mode-button">排列模式</button>
+        </div>
+        <div id="subjectInfo">
+            <h3 id="subjectName"></h3>
+            <p id="subjectDesc"></p>
+        </div>
+        <div id="wheelHint">使用滚轮切换学科</div>
+        <div id="modeInfo">散落模式：可缩放旋转</div>
+        <div id="currentSubject" style="position: absolute; bottom: 60px; left: 20px; z-index: 100; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; display: none; border: 1px solid rgba(0,255,255,0.5);">
+            <h3 id="currentSubjectName" style="margin: 0 0 5px 0; color: #00ffff;"></h3>
+            <p id="currentSubjectDesc" style="margin: 0; font-size: 12px;"></p>
+        </div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+					"three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+            import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+			import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+			import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+			let camera, scene, renderer, controls;
+            let composer, bloomPass;
+            let backgroundStars, subjectClusters = [];
+            let raycaster, mouse;
+            let isDragging = false, dragTarget = null, dragOffset = new THREE.Vector3();
+
+            // 模式管理
+            let currentMode = 'scatter'; // 'scatter' 或 'line'
+            let currentCenterIndex = 0; // 当前中心聚集体的索引（可以是小数，用于平滑过渡）
+            let targetCenterIndex = 0; // 目标中心聚集体的索引
+            let isTransitioning = false;
+            let lastWheelTime = 0; // 防抖动
+            
+            // 排列模式参数
+            const LINE_SPACING = 6;
+            const WHEEL_SENSITIVITY = 0.3; // 降低敏感度
+            const WHEEL_DEBOUNCE = 150; // 防抖动时间(ms)
+            const MIN_SCALE = 0.2;
+            const MAX_SCALE = 1.5;
+            const TRANSITION_SPEED = 0.08; // 过渡速度
+
+            // 9个学科的定义
+            const subjects = [
+                { 
+                    name: '数学', 
+                    color: 0x00ffff, 
+                    symbol: 'infinity',
+                    description: 'Mathematics - The language of the universe'
+                },
+                { 
+                    name: '物理', 
+                    color: 0xff4444, 
+                    symbol: 'atom',
+                    description: 'Physics - Understanding matter and energy'
+                },
+                { 
+                    name: '化学', 
+                    color: 0xff6600, 
+                    symbol: 'conical_flask',
+                    description: 'Chemistry - The science of substances'
+                },
+                { 
+                    name: '生物', 
+                    color: 0x44ff88, 
+                    symbol: 'dna',
+                    description: 'Biology - The study of life'
+                },
+                { 
+                    name: '地理', 
+                    color: 0x0066cc, 
+                    symbol: 'earth_globe',
+                    description: 'Geography - Understanding our world'
+                },
+                { 
+                    name: '历史', 
+                    color: 0xffaa44, 
+                    symbol: 'column',
+                    description: 'History - Learning from the past'
+                },
+                { 
+                    name: '语文', 
+                    color: 0xff8844, 
+                    symbol: 'chinese_character',
+                    description: 'Chinese - The art of language'
+                },
+                { 
+                    name: '英语', 
+                    color: 0x44aaff, 
+                    symbol: 'english_letters',
+                    description: 'English - Global communication'
+                },
+                { 
+                    name: '政治', 
+                    color: 0xaa44ff, 
+                    symbol: 'balance_scale',
+                    description: 'Politics - Understanding society'
+                }
+            ];
+
+			init();
+			animate();
+
+			function init() {
+				// 1. 场景设置
+				scene = new THREE.Scene();
+
+				// 2. 渲染器设置
+				renderer = new THREE.WebGLRenderer({ antialias: true });
+				renderer.setPixelRatio(window.devicePixelRatio);
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.toneMapping = THREE.ReinhardToneMapping;
+				document.body.appendChild(renderer.domElement);
+
+				// 3. 相机设置
+				camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+				camera.position.set(0, 0, 30);
+
+                // 4. 鼠标交互设置
+                raycaster = new THREE.Raycaster();
+                mouse = new THREE.Vector2();
+
+                // 5. 创建背景星空
+                createBackgroundStars();
+
+                // 6. 创建学科聚集体
+                createSubjectClusters();
+
+				// 7. 后期处理 - 辉光效果
+                const renderScene = new RenderPass(scene, camera);
+                bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+                bloomPass.threshold = 0.2;
+                bloomPass.strength = 1.5;
+                bloomPass.radius = 0.8;
+
+                composer = new EffectComposer(renderer);
+                composer.addPass(renderScene);
+                composer.addPass(bloomPass);
+
+                // 8. 控制器
+				controls = new OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                
+                // 9. 事件监听
+                window.addEventListener('resize', onWindowResize);
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mousedown', onMouseDown);
+                window.addEventListener('mouseup', onMouseUp);
+                window.addEventListener('click', onMouseClick);
+                window.addEventListener('wheel', onWheel);
+                
+                // 10. 按钮事件监听
+                document.getElementById('scatterMode').addEventListener('click', () => switchMode('scatter'));
+                document.getElementById('lineMode').addEventListener('click', () => switchMode('line'));
+			}
+
+            function createBackgroundStars() {
+                const starsGeometry = new THREE.BufferGeometry();
+                const starsCount = 3000;
+                const positions = new Float32Array(starsCount * 3);
+                
+                for(let i = 0; i < starsCount * 3; i++) {
+                    positions[i] = (Math.random() - 0.5) * 100;
+                }
+                
+                starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const starsMaterial = new THREE.PointsMaterial({
+                    size: 0.05,  // 减小粒子尺寸
+                    color: 0xeeeeee,
+                    transparent: true,
+                    opacity: 0.8,
+                    sizeAttenuation: true,  // 启用距离衰减
+                    blending: THREE.AdditiveBlending  // 添加发光混合模式
+                });
+                
+                backgroundStars = new THREE.Points(starsGeometry, starsMaterial);
+                scene.add(backgroundStars);
+            }
+
+            function createSubjectClusters() {
+                const minDistance = 8; // 聚集体之间的最小距离
+                const maxAttempts = 1000; // 最大尝试次数
+                const positions = [];
+                
+                subjects.forEach((subject, index) => {
+                    let position;
+                    let attempts = 0;
+                    
+                    do {
+                        // 在球面空间中随机生成位置
+                        const radius = 15 + Math.random() * 10; // 15-25的随机半径
+                        const phi = Math.random() * Math.PI * 2;
+                        const theta = Math.random() * Math.PI;
+                        
+                        position = new THREE.Vector3(
+                            radius * Math.sin(theta) * Math.cos(phi),
+                            radius * Math.sin(theta) * Math.sin(phi),
+                            radius * Math.cos(theta)
+                        );
+                        
+                        attempts++;
+                    } while (attempts < maxAttempts && !isPositionValid(position, positions, minDistance));
+                    
+                    // 如果找不到合适位置，使用原来的球面分布算法
+                    if (attempts >= maxAttempts) {
+                        const phi = Math.acos(-1 + (2 * index) / subjects.length);
+                        const theta = Math.sqrt(subjects.length * Math.PI) * phi;
+                        const radius = 20; // 增大半径避免重叠
+                        
+                        position = new THREE.Vector3(
+                            radius * Math.cos(theta) * Math.sin(phi),
+                            radius * Math.sin(theta) * Math.sin(phi),
+                            radius * Math.cos(phi)
+                        );
+                    }
+                    
+                    positions.push(position);
+                    const cluster = createCluster(subject, position);
+                    subjectClusters.push(cluster);
+                    scene.add(cluster.group);
+                });
+            }
+
+            function isPositionValid(newPos, existingPositions, minDistance) {
+                for (let pos of existingPositions) {
+                    if (newPos.distanceTo(pos) < minDistance) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            function createCluster(subject, position) {
+                const group = new THREE.Group();
+                group.position.copy(position);
+                
+                // 创建中心符号
+                const symbol = createSymbol(subject.symbol, subject.color);
+                group.add(symbol);
+                
+                // 创建周围聚集粒子
+                const clusterParticles = createClusterParticles(subject.color);
+                group.add(clusterParticles);
+                
+                return {
+                    group: group,
+                    symbol: symbol,
+                    particles: clusterParticles,
+                    subject: subject,
+                    originalScale: 1,
+                    isHovered: false,
+                    originalPosition: position.clone() // 存储原始位置的副本
+                };
+            }
+
+            function createSymbol(symbolType, color) {
+                const symbolGroup = new THREE.Group();
+                
+                switch(symbolType) {
+                    case 'infinity':
+                        return createInfinitySymbol(color);
+                    case 'atom':
+                        return createAtomSymbol(color);
+                    case 'conical_flask':
+                        return createConicalFlaskSymbol(color);
+                    case 'dna':
+                        return createDNASymbol(color);
+                    case 'earth_globe':
+                        return createEarthGlobeSymbol(color);
+                    case 'column':
+                        return createColumnSymbol(color);
+                    case 'chinese_character':
+                        return createChineseCharacterSymbol(color);
+                    case 'english_letters':
+                        return createEnglishLettersSymbol(color);
+                    case 'balance_scale':
+                        return createBalanceScaleSymbol(color);
+                    default:
+                        return createDefaultSymbol(color);
+                }
+            }
+
+            function createInfinitySymbol(color) {
+                const group = new THREE.Group();
+                
+                // 创建数学风格的无穷符号 - 使用数学曲线方程
+                const infinityPoints = [];
+                
+                // 使用Lemniscate of Bernoulli方程: (x² + y²)² = 2a²(x² - y²)
+                // 参数方程: x = a*cos(t)/(1+sin²(t)), y = a*sin(t)*cos(t)/(1+sin²(t))
+                const a = 1.5; // 控制大小
+                const segments = 128; // 增加分段数使曲线更平滑
+                
+                for (let i = 0; i <= segments; i++) {
+                    const t = (i / segments) * Math.PI * 2;
+                    const denominator = 1 + Math.sin(t) * Math.sin(t);
+                    const x = a * Math.cos(t) / denominator;
+                    const y = a * Math.sin(t) * Math.cos(t) / denominator;
+                    infinityPoints.push(new THREE.Vector3(x, y, 0));
+                }
+                
+                // 创建平滑的无穷符号曲线
+                const infinityCurve = new THREE.CatmullRomCurve3(infinityPoints, true);
+                const infinityGeometry = new THREE.TubeGeometry(infinityCurve, 128, 0.08, 16, true);
+                
+                // 使用渐变效果的材质
+                const infinityMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.95
+                });
+                const infinityMesh = new THREE.Mesh(infinityGeometry, infinityMaterial);
+                group.add(infinityMesh);
+                
+                // 添加发光的外轮廓
+                const outlineGeometry = new THREE.TubeGeometry(infinityCurve, 128, 0.12, 16, true);
+                const outlineMaterial = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(color).offsetHSL(0, 0, 0.3).getHex(), 
+                    transparent: true, 
+                    opacity: 0.4
+                });
+                const outlineMesh = new THREE.Mesh(outlineGeometry, outlineMaterial);
+                group.add(outlineMesh);
+                
+                // 添加数学符号的特征点（两个交叉点的小球）
+                const centerGeometry = new THREE.SphereGeometry(0.06, 12, 12);
+                const centerMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xffffff, 
+                    transparent: true, 
+                    opacity: 0.9 
+                });
+                const centerSphere = new THREE.Mesh(centerGeometry, centerMaterial);
+                group.add(centerSphere);
+                
+                // 添加装饰性的数学点
+                for (let i = 0; i < 4; i++) {
+                    const angle = (i / 4) * Math.PI * 2;
+                    const radius = 1.8;
+                    const dotGeometry = new THREE.SphereGeometry(0.03, 8, 8);
+                    const dotMaterial = new THREE.MeshBasicMaterial({ 
+                        color: color, 
+                        transparent: true, 
+                        opacity: 0.6 
+                    });
+                    const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+                    dot.position.set(
+                        Math.cos(angle) * radius,
+                        Math.sin(angle) * radius * 0.3,
+                        0
+                    );
+                    group.add(dot);
+                }
+                
+                return group;
+            }
+
+            function createAtomSymbol(color) {
+                const group = new THREE.Group();
+                
+                // 中心核心（使用原色）
+                const coreGeometry = new THREE.SphereGeometry(0.35, 20, 20);
+                const coreMaterial = new THREE.MeshBasicMaterial({ color: color });
+                const core = new THREE.Mesh(coreGeometry, coreMaterial);
+                group.add(core);
+                
+                // 电子轨道（使用不同颜色）
+                const orbitColors = [
+                    color, // 原色
+                    new THREE.Color(color).offsetHSL(0.33, 0, 0).getHex(), // 偏移120度
+                    new THREE.Color(color).offsetHSL(0.66, 0, 0).getHex()  // 偏移240度
+                ];
+                
+                for(let i = 0; i < 3; i++) {
+                    const orbitGeometry = new THREE.TorusGeometry(1.5 + i * 0.4, 0.04, 12, 48);
+                    const orbitMaterial = new THREE.MeshBasicMaterial({ 
+                        color: orbitColors[i], 
+                        transparent: true, 
+                        opacity: 0.8 
+                    });
+                    const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+                    orbit.rotation.x = i * Math.PI / 3;
+                    orbit.rotation.y = i * Math.PI / 4;
+                    group.add(orbit);
+                    
+                    // 在轨道上添加电子
+                    const electronGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+                    const electronMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    const electron = new THREE.Mesh(electronGeometry, electronMaterial);
+                    electron.position.set(1.5 + i * 0.4, 0, 0);
+                    orbit.add(electron);
+                }
+                
+                return group;
+            }
+
+            function createConicalFlaskSymbol(color) {
+                const group = new THREE.Group();
+                const material = new THREE.MeshBasicMaterial({ color: color });
+                const bondMaterial = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
+                
+                // 创建苯环分子结构 (C₆H₆)
+                const ringRadius = 1.2;
+                const atomRadius = 0.15;
+                const bondWidth = 0.05;
+                const bondHeight = 0.1;
+                
+                // 苯环的6个碳原子（使用两种颜色交替）
+                const carbonAtoms = [];
+                const carbonColors = [color, new THREE.Color(color).offsetHSL(0.3, 0, 0).getHex()];
+                
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i * Math.PI * 2) / 6;
+                    const x = Math.cos(angle) * ringRadius;
+                    const y = Math.sin(angle) * ringRadius;
+                    
+                    const carbonMaterial = new THREE.MeshBasicMaterial({ color: carbonColors[i % 2] });
+                    const atom = new THREE.Mesh(
+                        new THREE.SphereGeometry(atomRadius, 12, 12),
+                        carbonMaterial
+                    );
+                    atom.position.set(x, y, 0);
+                    carbonAtoms.push(atom);
+                    group.add(atom);
+                
+                    // 氢原子（使用白色更清晰）
+                    const hydrogenRadius = atomRadius * 0.7;
+                    const hDistance = ringRadius + 0.4;
+                    const hydrogen = new THREE.Mesh(
+                        new THREE.SphereGeometry(hydrogenRadius, 8, 8),
+                        new THREE.MeshBasicMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.9 })
+                    );
+                    hydrogen.position.set(Math.cos(angle) * hDistance, Math.sin(angle) * hDistance, 0);
+                    group.add(hydrogen);
+                    
+                    // C-H键
+                    const chBondGeometry = new THREE.CylinderGeometry(bondWidth * 0.7, bondWidth * 0.7, 0.4, 8);
+                    const chBond = new THREE.Mesh(chBondGeometry, bondMaterial);
+                    chBond.position.set(
+                        Math.cos(angle) * (ringRadius + 0.2),
+                        Math.sin(angle) * (ringRadius + 0.2),
+                        0
+                    );
+                    chBond.rotation.z = angle + Math.PI / 2;
+                    group.add(chBond);
+                }
+                
+                // 苯环的C-C键（单键和双键交替）
+                for (let i = 0; i < 6; i++) {
+                    const angle1 = (i * Math.PI * 2) / 6;
+                    const angle2 = ((i + 1) * Math.PI * 2) / 6;
+                    
+                    const x1 = Math.cos(angle1) * ringRadius;
+                    const y1 = Math.sin(angle1) * ringRadius;
+                    const x2 = Math.cos(angle2) * ringRadius;
+                    const y2 = Math.sin(angle2) * ringRadius;
+                    
+                    const midX = (x1 + x2) / 2;
+                    const midY = (y1 + y2) / 2;
+                    const bondLength = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+                    const bondAngle = Math.atan2(y2 - y1, x2 - x1);
+                    
+                    // 双键效果（两条平行线）
+                    for (let j = 0; j < 2; j++) {
+                        const offset = (j - 0.5) * bondWidth * 2;
+                        const bond = new THREE.Mesh(
+                            new THREE.CylinderGeometry(bondWidth, bondWidth, bondLength, 8),
+                            bondMaterial
+                        );
+                        bond.position.set(
+                            midX + Math.cos(bondAngle + Math.PI / 2) * offset,
+                            midY + Math.sin(bondAngle + Math.PI / 2) * offset,
+                            0
+                        );
+                        bond.rotation.z = bondAngle + Math.PI / 2;
+                        group.add(bond);
+                    }
+                }
+                
+                // 添加分子名称标识 "C₆H₆"
+                const labelGeometry = new THREE.RingGeometry(1.8, 2.0, 32);
+                const labelMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.2 
+                });
+                const label = new THREE.Mesh(labelGeometry, labelMaterial);
+                group.add(label);
+                
+                return group;
+            }
+
+            function createDNASymbol(color) {
+                const group = new THREE.Group();
+                const height = 3.5;
+                const steps = 30; // 增加步数使螺旋更平滑
+                const radius = 0.9;
+                
+                // 定义两条DNA链的颜色（参考图片：红色和黑色）
+                const chain1Color = 0xff4444; // 第一条链使用红色
+                const chain2Color = 0x333333; // 第二条链使用深灰色/黑色
+                
+                // 创建材质
+                const sphereGeometry = new THREE.SphereGeometry(0.15, 16, 16); // 更大更光滑的球体
+                const chain1Material = new THREE.MeshBasicMaterial({ 
+                    color: chain1Color,
+                    transparent: false
+                });
+                const chain2Material = new THREE.MeshBasicMaterial({ 
+                    color: chain2Color,
+                    transparent: false
+                });
+                const silverMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xc0c0c0, // 银色连接线
+                    transparent: true, 
+                    opacity: 0.9 
+                });
+                
+                // 存储球体位置，用于后续连接
+                const chain1Positions = [];
+                const chain2Positions = [];
+                
+                for(let i = 0; i < steps; i++) {
+                    const y = (i / steps - 0.5) * height;
+                    const angle = (i / steps) * Math.PI * 5; // 增加螺旋圈数
+                    
+                    // 第一条链（DNA的一条主链）
+                    const x1 = Math.cos(angle) * radius;
+                    const z1 = Math.sin(angle) * radius;
+                    
+                    // 第二条链（DNA的另一条主链，相位差π）
+                    const x2 = Math.cos(angle + Math.PI) * radius;
+                    const z2 = Math.sin(angle + Math.PI) * radius;
+                    
+                    // 存储位置
+                    chain1Positions.push(new THREE.Vector3(x1, y, z1));
+                    chain2Positions.push(new THREE.Vector3(x2, y, z2));
+                    
+                    // 创建第一条链的球体（代表磷酸基团+糖）
+                    const sphere1 = new THREE.Mesh(sphereGeometry, chain1Material);
+                    sphere1.position.set(x1, y, z1);
+                    group.add(sphere1);
+                    
+                    // 创建第二条链的球体
+                    const sphere2 = new THREE.Mesh(sphereGeometry, chain2Material);
+                    sphere2.position.set(x2, y, z2);
+                    group.add(sphere2);
+                    
+                    // 添加碱基对连接线（氢键）- 每4个位置连接一次
+                    if(i % 4 === 0) {
+                        // 创建银色连接线（代表碱基对之间的氢键）
+                        const bondGeometry = new THREE.CylinderGeometry(0.04, 0.04, 
+                            Math.sqrt((x2-x1)**2 + (z2-z1)**2), 12);
+                        const bond = new THREE.Mesh(bondGeometry, silverMaterial);
+                        
+                        // 计算连接线的位置和旋转
+                        const midX = (x1 + x2) / 2;
+                        const midZ = (z1 + z2) / 2;
+                        bond.position.set(midX, y, midZ);
+                        
+                        // 计算旋转角度
+                        const bondAngle = Math.atan2(z2 - z1, x2 - x1);
+                        bond.rotation.y = bondAngle;
+                        bond.rotation.z = Math.PI / 2;
+                        
+                        group.add(bond);
+                    }
+                }
+                
+                // 创建主链骨架连接线 - 使用银色更现代
+                for(let i = 0; i < steps - 1; i++) {
+                    // 第一条链的骨架连接
+                    const backboneGeometry1 = new THREE.CylinderGeometry(0.025, 0.025, 
+                        chain1Positions[i].distanceTo(chain1Positions[i + 1]), 8);
+                    const backbone1 = new THREE.Mesh(backboneGeometry1, silverMaterial);
+                    
+                    const midPos1 = chain1Positions[i].clone().add(chain1Positions[i + 1]).multiplyScalar(0.5);
+                    backbone1.position.copy(midPos1);
+                    
+                    // 计算骨架的方向
+                    const direction1 = chain1Positions[i + 1].clone().sub(chain1Positions[i]).normalize();
+                    backbone1.lookAt(midPos1.clone().add(direction1));
+                    backbone1.rotateX(Math.PI / 2);
+                    
+                    group.add(backbone1);
+                    
+                    // 第二条链的骨架连接
+                    const backboneGeometry2 = new THREE.CylinderGeometry(0.025, 0.025, 
+                        chain2Positions[i].distanceTo(chain2Positions[i + 1]), 8);
+                    const backbone2 = new THREE.Mesh(backboneGeometry2, silverMaterial);
+                    
+                    const midPos2 = chain2Positions[i].clone().add(chain2Positions[i + 1]).multiplyScalar(0.5);
+                    backbone2.position.copy(midPos2);
+                    
+                    const direction2 = chain2Positions[i + 1].clone().sub(chain2Positions[i]).normalize();
+                    backbone2.lookAt(midPos2.clone().add(direction2));
+                    backbone2.rotateX(Math.PI / 2);
+                    
+                    group.add(backbone2);
+                    }
+                
+                // 删除装饰性标识环（按用户要求）
+                
+                return group;
+            }
+
+            function createEarthGlobeSymbol(color) {
+                const group = new THREE.Group();
+                
+                // 蓝色为主题的地球仪设计
+                const deepBlue = 0x003366; // 深蓝色底座
+                const oceanBlue = 0x0099cc; // 海洋蓝
+                const landGreen = 0x339966; // 陆地绿
+                const gridGold = 0xffcc00; // 经纬线金色
+                const supportSilver = 0x999999; // 支架银色
+                
+                // 地球仪底座（深蓝色）
+                const baseGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
+                const baseMaterial = new THREE.MeshBasicMaterial({ color: deepBlue });
+                const base = new THREE.Mesh(baseGeometry, baseMaterial);
+                base.position.y = -1.5;
+                group.add(base);
+                
+                // 支撑臂（银色）
+                const armCurve = new THREE.EllipseCurve(0, 0, 1.2, 1.2, 0, Math.PI, false, 0);
+                const armPoints = armCurve.getPoints(32);
+                const armGeometry = new THREE.BufferGeometry().setFromPoints(armPoints);
+                const armMaterial = new THREE.LineBasicMaterial({ color: supportSilver, linewidth: 4 });
+                const arm = new THREE.Line(armGeometry, armMaterial);
+                arm.rotation.z = Math.PI / 2;
+                group.add(arm);
+                
+                // 地球主体 - 海洋（蓝色背景）
+                const globeGeometry = new THREE.SphereGeometry(1, 24, 24);
+                const oceanMaterial = new THREE.MeshBasicMaterial({ 
+                    color: oceanBlue, 
+                    transparent: true, 
+                    opacity: 0.9
+                });
+                const globe = new THREE.Mesh(globeGeometry, oceanMaterial);
+                group.add(globe);
+                
+                // 添加大陆轮廓（绿色陆地）
+                const continentData = [
+                    { lat: 30, lon: 0, size: 0.4 },     // 非洲
+                    { lat: 50, lon: 60, size: 0.35 },   // 亚洲
+                    { lat: 40, lon: -80, size: 0.3 },   // 北美
+                    { lat: -20, lon: -60, size: 0.25 }, // 南美
+                    { lat: -30, lon: 140, size: 0.2 },  // 澳洲
+                ];
+                
+                continentData.forEach(continent => {
+                    const phi = (90 - continent.lat) * Math.PI / 180;
+                    const theta = continent.lon * Math.PI / 180;
+                    
+                    const x = Math.sin(phi) * Math.cos(theta) * 1.02;
+                    const y = Math.cos(phi) * 1.02;
+                    const z = Math.sin(phi) * Math.sin(theta) * 1.02;
+                    
+                    const landGeometry = new THREE.SphereGeometry(continent.size, 12, 12);
+                    const landMaterial = new THREE.MeshBasicMaterial({ 
+                        color: landGreen, 
+                        transparent: true, 
+                        opacity: 0.8 
+                    });
+                    const landMesh = new THREE.Mesh(landGeometry, landMaterial);
+                    landMesh.position.set(x, y, z);
+                    group.add(landMesh);
+                });
+                
+                // 经线（金色）
+                for(let i = 0; i < 12; i++) {
+                    const meridianCurve = new THREE.EllipseCurve(0, 0, 1.03, 1.03, 0, Math.PI * 2, false, 0);
+                    const meridianPoints = meridianCurve.getPoints(32);
+                    const meridianGeometry = new THREE.BufferGeometry().setFromPoints(meridianPoints);
+                    const meridianMaterial = new THREE.LineBasicMaterial({ 
+                        color: gridGold, 
+                        transparent: true, 
+                        opacity: 0.7 
+                    });
+                    const meridian = new THREE.Line(meridianGeometry, meridianMaterial);
+                    meridian.rotation.y = (i / 12) * Math.PI;
+                    meridian.rotation.x = Math.PI / 2;
+                    group.add(meridian);
+                }
+                
+                // 纬线（金色）- 包括赤道、南北回归线等重要纬线
+                const importantLatitudes = [0, 23.5, -23.5, 45, -45]; // 赤道、回归线、45度线
+                importantLatitudes.forEach(lat => {
+                    const phi = (90 - lat) * Math.PI / 180;
+                    const radius = Math.sin(phi) * 1.03;
+                    const y = Math.cos(phi) * 1.03;
+                    
+                    if (radius > 0.1) {
+                        const latitudeGeometry = new THREE.RingGeometry(radius - 0.02, radius + 0.02, 32);
+                        const latitudeMaterial = new THREE.MeshBasicMaterial({ 
+                            color: gridGold, 
+                            transparent: true, 
+                            opacity: lat === 0 ? 0.9 : 0.6 // 赤道更亮
+                        });
+                        const latitude = new THREE.Mesh(latitudeGeometry, latitudeMaterial);
+                        latitude.position.y = y;
+                        latitude.rotation.x = Math.PI / 2;
+                        group.add(latitude);
+                    }
+                });
+                
+                // 添加极地标记（白色小球）
+                const poleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+                const poleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                
+                // 北极
+                const northPole = new THREE.Mesh(poleGeometry, poleMaterial);
+                northPole.position.set(0, 1.05, 0);
+                group.add(northPole);
+                
+                // 南极
+                const southPole = new THREE.Mesh(poleGeometry, poleMaterial);
+                southPole.position.set(0, -1.05, 0);
+                group.add(southPole);
+                
+                return group;
+            }
+
+            function createColumnSymbol(color) {
+                const group = new THREE.Group();
+                
+                // 多色材质定义
+                const baseMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).offsetHSL(0, 0, -0.2).getHex() }); // 柱基用深色
+                const columnMaterial = new THREE.MeshBasicMaterial({ color: color }); // 柱身用原色
+                const capMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).offsetHSL(0, 0, 0.3).getHex() }); // 柱头用亮色
+                const decorativeMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.8 }); // 装饰用金色
+                
+                // 柱基（使用深色）
+                const baseGeometry = new THREE.CylinderGeometry(0.45, 0.55, 0.35, 12);
+                const base = new THREE.Mesh(baseGeometry, baseMaterial);
+                base.position.y = -1.175;
+                group.add(base);
+                
+                // 柱身（使用原色，添加凹槽）
+                const columnGeometry = new THREE.CylinderGeometry(0.32, 0.32, 2, 16);
+                const column = new THREE.Mesh(columnGeometry, columnMaterial);
+                group.add(column);
+                
+                // 柱身装饰线（金色）
+                for (let i = 0; i < 8; i++) {
+                    const grooveGeometry = new THREE.TorusGeometry(0.33, 0.01, 6, 16);
+                    const groove = new THREE.Mesh(grooveGeometry, decorativeMaterial);
+                    groove.position.y = -0.8 + i * 0.2;
+                    groove.rotation.x = Math.PI / 2;
+                    group.add(groove);
+                }
+                
+                // 柱头（使用亮色）
+                const capGeometry = new THREE.CylinderGeometry(0.5, 0.42, 0.35, 12);
+                const cap = new THREE.Mesh(capGeometry, capMaterial);
+                cap.position.y = 1.175;
+                group.add(cap);
+                
+                // 柱头装饰（金色）
+                const capDecorationGeometry = new THREE.TorusGeometry(0.46, 0.02, 8, 20);
+                const capDecoration = new THREE.Mesh(capDecorationGeometry, decorativeMaterial);
+                capDecoration.position.y = 1.3;
+                capDecoration.rotation.x = Math.PI / 2;
+                group.add(capDecoration);
+                
+                // 顶部装饰球（金色）
+                const topSphereGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+                const topSphere = new THREE.Mesh(topSphereGeometry, decorativeMaterial);
+                topSphere.position.y = 1.4;
+                group.add(topSphere);
+                
+                return group;
+            }
+
+            function createChineseCharacterSymbol(color) {
+                const group = new THREE.Group();
+                const material = new THREE.MeshBasicMaterial({ color: color });
+                const pageMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.9 
+                });
+                
+                // 创建书本符号
+                const bookWidth = 1.8;
+                const bookHeight = 2.2;
+                const bookDepth = 0.3;
+                
+                // 书本封面
+                const coverGeometry = new THREE.BoxGeometry(bookWidth, bookHeight, 0.05);
+                const cover = new THREE.Mesh(coverGeometry, material);
+                cover.position.set(0, 0, bookDepth / 2);
+                group.add(cover);
+                
+                // 书本封底
+                const backCover = new THREE.Mesh(coverGeometry, material);
+                backCover.position.set(0, 0, -bookDepth / 2);
+                group.add(backCover);
+                
+                // 书本侧面（书脊）
+                const spineGeometry = new THREE.BoxGeometry(0.05, bookHeight, bookDepth);
+                const spine = new THREE.Mesh(spineGeometry, material);
+                spine.position.set(-bookWidth / 2, 0, 0);
+                group.add(spine);
+                
+                // 书页（多层效果）
+                for (let i = 0; i < 8; i++) {
+                    const pageGeometry = new THREE.BoxGeometry(bookWidth * 0.9, bookHeight * 0.9, 0.02);
+                    const page = new THREE.Mesh(pageGeometry, pageMaterial);
+                    page.position.set(0.05, 0, (i - 3.5) * 0.03);
+                    group.add(page);
+                }
+                
+                // 书本上的文字线条（模拟文字）
+                const lineWidth = bookWidth * 0.6;
+                const lineHeight = 0.03;
+                const lineDepth = 0.01;
+                
+                // 标题线（粗一些）
+                const titleGeometry = new THREE.BoxGeometry(lineWidth * 0.8, lineHeight * 1.5, lineDepth);
+                const title = new THREE.Mesh(titleGeometry, new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.8 
+                }));
+                title.position.set(0, bookHeight * 0.25, bookDepth / 2 + 0.01);
+                group.add(title);
+                
+                // 文字行
+                for (let i = 0; i < 6; i++) {
+                    const textLineGeometry = new THREE.BoxGeometry(lineWidth, lineHeight, lineDepth);
+                    const textLine = new THREE.Mesh(textLineGeometry, new THREE.MeshBasicMaterial({ 
+                        color: color, 
+                        transparent: true, 
+                        opacity: 0.6 
+                    }));
+                    textLine.position.set(0, bookHeight * 0.1 - i * 0.15, bookDepth / 2 + 0.01);
+                    group.add(textLine);
+                }
+                
+                // 书本边角装饰
+                const cornerSize = 0.1;
+                const cornerPositions = [
+                    [-bookWidth/2 + cornerSize, bookHeight/2 - cornerSize],
+                    [bookWidth/2 - cornerSize, bookHeight/2 - cornerSize],
+                    [-bookWidth/2 + cornerSize, -bookHeight/2 + cornerSize],
+                    [bookWidth/2 - cornerSize, -bookHeight/2 + cornerSize]
+                ];
+                
+                cornerPositions.forEach(([x, y]) => {
+                    const cornerGeometry = new THREE.BoxGeometry(cornerSize, cornerSize, 0.02);
+                    const corner = new THREE.Mesh(cornerGeometry, new THREE.MeshBasicMaterial({ 
+                        color: color, 
+                        transparent: true, 
+                        opacity: 0.7 
+                    }));
+                    corner.position.set(x, y, bookDepth / 2 + 0.02);
+                    corner.rotation.z = Math.PI / 4;
+                    group.add(corner);
+                });
+                
+                return group;
+            }
+
+            function createEnglishLettersSymbol(color) {
+                const group = new THREE.Group();
+                const material = new THREE.MeshBasicMaterial({ color: color });
+                const lineMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.4 
+                });
+                const strokeWidth = 0.08;
+                const strokeDepth = 0.12;
+                
+                // 创建四线三格背景（蓝线红线间隔）
+                const lineWidth = 2.5;
+                const lineSpacing = 0.4;
+                
+                // 四条横线 - 蓝红间隔
+                const lineColors = [
+                    new THREE.MeshBasicMaterial({ color: 0x4A90E2, transparent: true, opacity: 0.6 }), // 蓝色
+                    new THREE.MeshBasicMaterial({ color: 0xE74C3C, transparent: true, opacity: 0.6 }), // 红色
+                    new THREE.MeshBasicMaterial({ color: 0x4A90E2, transparent: true, opacity: 0.6 }), // 蓝色
+                    new THREE.MeshBasicMaterial({ color: 0xE74C3C, transparent: true, opacity: 0.6 })  // 红色
+                ];
+                
+                for(let i = 0; i < 4; i++) {
+                    const y = (i - 1.5) * lineSpacing;
+                    const lineGeometry = new THREE.BoxGeometry(lineWidth, 0.02, strokeDepth * 0.5);
+                    const line = new THREE.Mesh(lineGeometry, lineColors[i]);
+                    line.position.set(0, y, 0);
+                    group.add(line);
+                }
+                
+                // 写字母A（正向，顶部尖，底部宽）
+                const createLetterA = () => {
+                    const letterA = new THREE.Group();
+                    
+                    // A的左边斜线（从底部左侧到顶部中心）
+                    const leftStroke = new THREE.Mesh(
+                        new THREE.BoxGeometry(strokeWidth, 1.0, strokeDepth),
+                        material
+                    );
+                    leftStroke.position.set(-0.15, 0, 0);
+                    leftStroke.rotation.z = -0.3; // 注意符号变化
+                    letterA.add(leftStroke);
+                    
+                    // A的右边斜线（从底部右侧到顶部中心）
+                    const rightStroke = new THREE.Mesh(
+                        new THREE.BoxGeometry(strokeWidth, 1.0, strokeDepth),
+                        material
+                    );
+                    rightStroke.position.set(0.15, 0, 0);
+                    rightStroke.rotation.z = 0.3; // 注意符号变化
+                    letterA.add(rightStroke);
+                    
+                    // A的横线（在中间偏下位置）
+                    const crossStroke = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.25, strokeWidth, strokeDepth),
+                        material
+                    );
+                    crossStroke.position.set(0, -0.2, 0); // 下移到正确位置
+                    letterA.add(crossStroke);
+                    
+                    return letterA;
+                };
+                
+                // 添加字母A
+                const letterA = createLetterA();
+                letterA.position.set(0, 0.1, 0);
+                letterA.scale.setScalar(1.0);
+                group.add(letterA);
+                
+                return group;
+            }
+
+            function createBalanceScaleSymbol(color) {
+                const group = new THREE.Group();
+                
+                // 多色材质定义
+                const baseMaterial = new THREE.MeshBasicMaterial({ color: color }); // 基座用原色
+                const supportMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).offsetHSL(0.15, 0, 0).getHex() }); // 支柱用偏移色
+                const leftPlateMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xff6b6b, // 左盘用红色
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                const rightPlateMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x4ecdc4, // 右盘用青色
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                const metalMaterial = new THREE.MeshBasicMaterial({ color: 0xc0c0c0 }); // 金属部件用银色
+                
+                // 底座（使用原色）
+                const baseGeometry = new THREE.CylinderGeometry(0.6, 0.8, 0.2, 16);
+                const base = new THREE.Mesh(baseGeometry, baseMaterial);
+                base.position.y = -1.2;
+                group.add(base);
+                
+                // 主支柱（使用偏移色）
+                const supportGeometry = new THREE.CylinderGeometry(0.06, 0.08, 1.8, 12);
+                const support = new THREE.Mesh(supportGeometry, supportMaterial);
+                support.position.y = -0.3;
+                group.add(support);
+                
+                // 顶部支点（使用银色）
+                const pivotGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+                const pivot = new THREE.Mesh(pivotGeometry, metalMaterial);
+                pivot.position.y = 0.6;
+                group.add(pivot);
+                
+                // 天平杆（使用银色）
+                const barGeometry = new THREE.CylinderGeometry(0.04, 0.04, 2.2, 12);
+                const bar = new THREE.Mesh(barGeometry, metalMaterial);
+                bar.rotation.z = Math.PI / 2;
+                bar.position.y = 0.6;
+                group.add(bar);
+                
+                // 天平盘和悬挂链（左右不同颜色）
+                [-1, 1].forEach((x, index) => {
+                    // 悬挂链（银色）
+                    const chainGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.4, 8);
+                    const chain = new THREE.Mesh(chainGeometry, metalMaterial);
+                    chain.position.set(x, 0.4, 0);
+                    group.add(chain);
+                    
+                    // 天平盘（左红右青）
+                    const plateGeometry = new THREE.CylinderGeometry(0.4, 0.35, 0.08, 20);
+                    const plateMaterial = index === 0 ? leftPlateMaterial : rightPlateMaterial;
+                    const plate = new THREE.Mesh(plateGeometry, plateMaterial);
+                    plate.position.set(x, 0.15, 0);
+                    group.add(plate);
+                    
+                    // 盘边缘装饰（银色）
+                    const rimGeometry = new THREE.TorusGeometry(0.37, 0.02, 8, 20);
+                    const rim = new THREE.Mesh(rimGeometry, metalMaterial);
+                    rim.position.set(x, 0.19, 0);
+                    rim.rotation.x = Math.PI / 2;
+                    group.add(rim);
+                    
+                    // 模拟重物
+                    if (x === -1) { // 左盘放金色重物
+                        const weightGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+                        const weightMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+                        const weight = new THREE.Mesh(weightGeometry, weightMaterial);
+                        weight.position.set(x, 0.27, 0);
+                        group.add(weight);
+                    } else { // 右盘放银色重物
+                        const weightGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+                        const weightMaterial = new THREE.MeshBasicMaterial({ color: 0xc0c0c0 });
+                        const weight = new THREE.Mesh(weightGeometry, weightMaterial);
+                        weight.position.set(x, 0.25, 0);
+                        group.add(weight);
+                    }
+                });
+                
+                // 刻度盘背景（使用原色）
+                const scaleGeometry = new THREE.RingGeometry(0.15, 0.25, 32);
+                const scaleMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.3 
+                });
+                const scale = new THREE.Mesh(scaleGeometry, scaleMaterial);
+                scale.position.set(0, -0.3, 0.1);
+                group.add(scale);
+                
+                return group;
+            }
+
+            function createDefaultSymbol(color) {
+                const geometry = new THREE.SphereGeometry(1, 16, 16);
+                const material = new THREE.MeshBasicMaterial({ color: color });
+                return new THREE.Mesh(geometry, material);
+            }
+
+            function createClusterParticles(color) {
+                const particlesGeometry = new THREE.BufferGeometry();
+                const particlesCount = 200;
+                const positions = new Float32Array(particlesCount * 3);
+                
+                for(let i = 0; i < particlesCount * 3; i += 3) {
+                    // 在球形区域内随机分布
+                    const radius = Math.random() * 3 + 2;
+                    const phi = Math.random() * Math.PI * 2;
+                    const theta = Math.random() * Math.PI;
+                    
+                    positions[i] = radius * Math.sin(theta) * Math.cos(phi);
+                    positions[i + 1] = radius * Math.sin(theta) * Math.sin(phi);
+                    positions[i + 2] = radius * Math.cos(theta);
+                }
+                
+                particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const particlesMaterial = new THREE.PointsMaterial({
+                    size: 0.1,
+                    color: color,
+                    transparent: true,
+                    opacity: 0.8,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                return new THREE.Points(particlesGeometry, particlesMaterial);
+            }
+
+            function onMouseMove(event) {
+                // 排列模式下完全禁用鼠标交互
+                if (currentMode === 'line') {
+                    document.body.style.cursor = 'default';
+                    return;
+                }
+                
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                if (isDragging && dragTarget) {
+                    // 拖拽模式：移动聚集体
+                    raycaster.setFromCamera(mouse, camera);
+                    
+                    // 创建一个与相机垂直的平面来计算拖拽位置
+                    const plane = new THREE.Plane();
+                    plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), dragTarget.group.position);
+                    
+                    const intersection = new THREE.Vector3();
+                    if (raycaster.ray.intersectPlane(plane, intersection)) {
+                        const newPosition = intersection.add(dragOffset);
+                        
+                        // 检查与其他聚集体的碰撞
+                        const minDistance = 8;
+                        let canMove = true;
+                        
+                        for (let cluster of subjectClusters) {
+                            if (cluster !== dragTarget) {
+                                if (newPosition.distanceTo(cluster.group.position) < minDistance) {
+                                    canMove = false;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 只有在不碰撞时才移动
+                        if (canMove) {
+                            dragTarget.group.position.copy(newPosition);
+                        }
+                    }
+                    
+                    // 禁用相机控制器在拖拽时
+                    controls.enabled = false;
+                } else {
+                    // 正常悬停模式
+                    raycaster.setFromCamera(mouse, camera);
+                    const intersects = raycaster.intersectObjects(scene.children, true);
+                    
+                    // 重置所有聚集体状态
+                    subjectClusters.forEach(cluster => {
+                        if(cluster.isHovered) {
+                            cluster.group.scale.setScalar(cluster.originalScale);
+                            cluster.isHovered = false;
+                        }
+                    });
+                    
+                    // 检查悬停
+                    if(intersects.length > 0) {
+                        for(let cluster of subjectClusters) {
+                            if(cluster.group.children.some(child => intersects[0].object === child || intersects[0].object.parent === child)) {
+                                cluster.group.scale.setScalar(1.2);
+                                cluster.isHovered = true;
+                                showSubjectInfo(cluster.subject);
+                                document.body.style.cursor = 'grab'; // 显示可拖拽光标
+                                break;
+                            }
+                        }
+                    } else {
+                        hideSubjectInfo();
+                        document.body.style.cursor = 'default';
+                    }
+                }
+            }
+
+            function onMouseDown(event) {
+                // 排列模式下禁用拖拽
+                if (currentMode === 'line') return;
+                
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                
+                if(intersects.length > 0) {
+                    for(let cluster of subjectClusters) {
+                        if(cluster.group.children.some(child => intersects[0].object === child || intersects[0].object.parent === child)) {
+                            isDragging = true;
+                            dragTarget = cluster;
+                            
+                            // 计算拖拽偏移量
+                            const plane = new THREE.Plane();
+                            plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), cluster.group.position);
+                            
+                            const intersection = new THREE.Vector3();
+                            if (raycaster.ray.intersectPlane(plane, intersection)) {
+                                dragOffset.copy(cluster.group.position).sub(intersection);
+                            }
+                            
+                            // 改变鼠标样式
+                            document.body.style.cursor = 'grabbing';
+                            break;
+                        }
+                    }
+                }
+            }
+
+            function onMouseUp(event) {
+                if (isDragging) {
+                    isDragging = false;
+                    dragTarget = null;
+                    dragOffset.set(0, 0, 0);
+                    controls.enabled = true; // 重新启用相机控制器
+                    document.body.style.cursor = 'default';
+                }
+            }
+
+            function onMouseClick(event) {
+                // 排列模式下禁用点击交互
+                if (currentMode === 'line') return;
+                
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                
+                if(intersects.length > 0) {
+                    for(let cluster of subjectClusters) {
+                        if(cluster.group.children.some(child => intersects[0].object === child || intersects[0].object.parent === child)) {
+                            // 点击效果 - 这里可以添加更多交互
+                            cluster.group.rotation.y += Math.PI / 4;
+                            console.log(`Clicked on ${cluster.subject.name}`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            function onWheel(event) {
+                if (currentMode === 'line') {
+                    // 排列模式下处理滚轮滚动学科
+                    event.preventDefault();
+                    event.stopPropagation();
+                    
+                    const now = Date.now();
+                    if (now - lastWheelTime < WHEEL_DEBOUNCE || isTransitioning) {
+                        return; // 防抖动和防止过渡期间的操作
+                    }
+                    
+                    lastWheelTime = now;
+                    isTransitioning = true;
+                    
+                    // 根据滚轮方向切换学科 - 使用连续索引，不做模运算
+                    if (event.deltaY > 0) {
+                        // 向下滚动，下一个学科
+                        targetCenterIndex += 1;
+                    } else {
+                        // 向上滚动，上一个学科
+                        targetCenterIndex -= 1;
+                    }
+                    
+                    // 开始过渡动画
+                    setTimeout(() => {
+                        isTransitioning = false;
+                    }, 500);
+                }
+                // 散落模式下让OrbitControls处理缩放（不阻止默认行为）
+            }
+
+            function arrangeInLine() {
+                // 平滑更新当前中心索引
+                currentCenterIndex += (targetCenterIndex - currentCenterIndex) * TRANSITION_SPEED;
+                
+                // 更新当前学科信息显示
+                const centerSubjectIndex = ((Math.round(currentCenterIndex) % subjects.length) + subjects.length) % subjects.length;
+                const centerSubject = subjects[centerSubjectIndex];
+                document.getElementById('currentSubjectName').textContent = centerSubject.name;
+                document.getElementById('currentSubjectDesc').textContent = centerSubject.description;
+                document.getElementById('currentSubject').style.display = 'block';
+                
+                // 为每个聚集体计算位置
+                subjectClusters.forEach((cluster, index) => {
+                    // 计算这个聚集体相对于当前中心的基础位置
+                    let relativeIndex = index - currentCenterIndex;
+                    
+                    // 将相对位置调整到 [-4.5, 4.5] 范围内，实现无缝循环
+                    while (relativeIndex > subjects.length / 2) {
+                        relativeIndex -= subjects.length;
+                    }
+                    while (relativeIndex < -subjects.length / 2) {
+                        relativeIndex += subjects.length;
+                    }
+                    
+                    // 计算目标位置
+                    const targetX = relativeIndex * LINE_SPACING;
+                    const targetY = 0;
+                    const targetZ = -Math.abs(relativeIndex) * 1.5;
+                    
+                    // 平滑过渡到目标位置
+                    cluster.group.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), TRANSITION_SPEED);
+                    
+                    // 计算缩放和透明度
+                    const distanceFromCenter = Math.abs(relativeIndex);
+                    let scale, opacity;
+                    
+                    if (distanceFromCenter < 0.1) {
+                        scale = MAX_SCALE;
+                        opacity = 1.0;
+                    } else if (distanceFromCenter < 1) {
+                        scale = MAX_SCALE * 0.7;
+                        opacity = 0.9;
+                    } else if (distanceFromCenter < 2) {
+                        scale = MAX_SCALE * 0.4;
+                        opacity = 0.6;
+                    } else if (distanceFromCenter < 3) {
+                        scale = MIN_SCALE;
+                        opacity = 0.3;
+                    } else {
+                        // 超出视野范围，完全隐藏
+                        scale = 0;
+                        opacity = 0;
+                    }
+                    
+                    cluster.group.scale.lerp(new THREE.Vector3(scale, scale, scale), TRANSITION_SPEED);
+                    
+                    // 应用透明度
+                    if (cluster.symbol.material) {
+                        cluster.symbol.material.opacity = opacity;
+                        cluster.symbol.material.transparent = true;
+                    }
+                    if (cluster.particles.material) {
+                        cluster.particles.material.opacity = opacity * 0.8;
+                        cluster.particles.material.transparent = true;
+                    }
+                    
+                    // 设置可见性
+                    cluster.group.visible = opacity > 0;
+                });
+            }
+
+            function arrangeInScatter() {
+                subjectClusters.forEach((cluster, index) => {
+                    // 恢复到原始散落位置（需要存储原始位置）
+                    if (cluster.originalPosition) {
+                        cluster.group.position.lerp(cluster.originalPosition, 0.1);
+                        cluster.group.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+                    }
+                });
+            }
+
+            function switchMode(newMode) {
+                if (currentMode === newMode || isTransitioning) return;
+                
+                isTransitioning = true;
+                currentMode = newMode;
+                
+                // 更新按钮状态
+                document.getElementById('scatterMode').classList.toggle('active', newMode === 'scatter');
+                document.getElementById('lineMode').classList.toggle('active', newMode === 'line');
+                
+                // 显示/隐藏提示信息
+                document.getElementById('wheelHint').style.display = newMode === 'line' ? 'block' : 'none';
+                document.getElementById('currentSubject').style.display = newMode === 'line' ? 'block' : 'none';
+                document.getElementById('modeInfo').textContent = newMode === 'line' ? 
+                    '排列模式：滚轮切换学科' : '散落模式：可缩放旋转';
+                
+                // 控制OrbitControls的缩放功能
+                if (newMode === 'line') {
+                    // 排列模式下禁用缩放，避免与滚轮交互冲突
+                    controls.enableZoom = false;
+                    currentCenterIndex = 0;
+                    targetCenterIndex = 0;
+                } else {
+                    // 散落模式下启用缩放
+                    controls.enableZoom = true;
+                    // 恢复所有聚集体的透明度
+                    subjectClusters.forEach(cluster => {
+                        if (cluster.symbol.material) {
+                            cluster.symbol.material.opacity = 1;
+                        }
+                        if (cluster.particles.material) {
+                            cluster.particles.material.opacity = 0.8;
+                        }
+                    });
+                }
+                
+                // 过渡完成后重置状态
+                setTimeout(() => {
+                    isTransitioning = false;
+                }, 1000);
+            }
+
+            
+
+            function showSubjectInfo(subject) {
+                const infoDiv = document.getElementById('subjectInfo');
+                const nameEl = document.getElementById('subjectName');
+                const descEl = document.getElementById('subjectDesc');
+                
+                nameEl.textContent = subject.name;
+                descEl.textContent = subject.description;
+                infoDiv.style.display = 'block';
+            }
+
+            function hideSubjectInfo() {
+                document.getElementById('subjectInfo').style.display = 'none';
+            }
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function animate() {
+				requestAnimationFrame(animate);
+
+                const time = Date.now() * 0.001;
+                
+                // 背景星空缓慢旋转
+                if(backgroundStars) {
+                    backgroundStars.rotation.y = time * 0.02;
+                }
+                
+                // 更新布局
+                if (currentMode === 'line') {
+                    arrangeInLine();
+                } else if (currentMode === 'scatter') {
+                    arrangeInScatter();
+                }
+                
+                // 聚集体动画
+                subjectClusters.forEach((cluster, index) => {
+                    // 缓慢自转
+                    cluster.symbol.rotation.y = time * 0.5 + index;
+                    cluster.symbol.rotation.x = Math.sin(time + index) * 0.2;
+                    
+                    // 粒子云旋转
+                    cluster.particles.rotation.y = -time * 0.3 + index * 0.5;
+                    cluster.particles.rotation.x = Math.cos(time * 0.7 + index) * 0.1;
+                    
+                    // 散落模式下的轻微浮动
+                    if (currentMode === 'scatter' && !isTransitioning) {
+                        const originalY = cluster.originalPosition ? cluster.originalPosition.y : 0;
+                        cluster.group.position.y = originalY + Math.sin(time * 2 + index * 0.5) * 0.3;
+                    }
+                });
+
+				controls.update();
+				composer.render();
+			}
+		</script>
+	</body>
+</html>

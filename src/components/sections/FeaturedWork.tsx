@@ -6,7 +6,8 @@ import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Link from 'next/link'
 import { ArrowRight, BookOpen, Zap } from 'lucide-react'
-import { SubjectCard } from '@/components/ui/SubjectCard'
+import { ModernSubjectGrid } from '@/components/ui/ModernSubjectGrid'
+import { ModernSectionHeader } from '@/components/ui/ModernSectionHeader'
 import { subjects, getAvailableSubjects } from '@/data/subjects'
 
 if (typeof window !== 'undefined') {
@@ -79,41 +80,32 @@ export function FeaturedWork() {
       className="py-20 md:py-32 bg-transparent"
     >
       <div className="container mx-auto px-6">
-        {/* Section Header */}
-        <div ref={titleRef} className="mb-16 md:mb-20">
-          <div className="flex items-center space-x-3 mb-6">
-            <BookOpen className="w-8 h-8 text-blue-400" />
-            <h2 className="text-4xl md:text-5xl lg:text-6xl font-normal text-white drop-shadow-lg">
-              学科知识图谱
-            </h2>
-          </div>
-          <p className="text-lg md:text-xl text-gray-200 max-w-4xl">
-            探索各学科的知识结构，通过AI智能辅导和3D可视化，
-            让学习变得更加直观高效。选择你感兴趣的学科开始学习之旅。
-          </p>
-
-          {/* 统计信息 */}
-          <div className="flex items-center space-x-8 mt-6 text-sm text-gray-300">
-            <div className="flex items-center space-x-2">
-              <Zap className="w-4 h-4 text-yellow-400" />
-              <span>{getAvailableSubjects().length} 个学科可用</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <BookOpen className="w-4 h-4 text-blue-400" />
-              <span>{subjects.reduce((total, subject) => total + subject.knowledgePoints, 0)} 个知识点</span>
-            </div>
-          </div>
+        {/* 现代化页面标题 */}
+        <div ref={titleRef}>
+          <ModernSectionHeader
+            title="学科知识图谱"
+            subtitle="探索各学科的知识结构，通过AI智能辅导和3D可视化，让学习变得更加直观高效。选择你感兴趣的学科开始学习之旅。"
+            icon={<BookOpen className="w-8 h-8 text-blue-400" />}
+            stats={[
+              {
+                icon: <Zap className="w-4 h-4" />,
+                label: '个学科可用',
+                value: getAvailableSubjects().length,
+                color: '#fbbf24'
+              },
+              {
+                icon: <BookOpen className="w-4 h-4" />,
+                label: '个知识点',
+                value: subjects.reduce((total, subject) => total + subject.knowledgePoints, 0),
+                color: '#3b82f6'
+              }
+            ]}
+          />
         </div>
 
-        {/* 学科网格 - 响应式布局 */}
-        <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 mb-16">
-          {subjects.map((subject, index) => (
-            <SubjectCard
-              key={subject.id}
-              subject={subject}
-              index={index}
-            />
-          ))}
+        {/* 现代化学科网格 */}
+        <div ref={gridRef} className="mb-16">
+          <ModernSubjectGrid />
         </div>
 
         {/* 进入学习平台链接 */}

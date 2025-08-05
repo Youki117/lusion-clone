@@ -50,6 +50,9 @@ export default function EducationPage() {
   // 知识点卡片状态
   const [selectedKnowledgePoint, setSelectedKnowledgePoint] = useState<KnowledgePoint | null>(null)
   const [isKnowledgeCardOpen, setIsKnowledgeCardOpen] = useState(false)
+  
+  // 搜索结果状态
+  const [searchResults, setSearchResults] = useState({ filtered: 0, total: 0 })
 
   useEffect(() => {
     const subjectParam = searchParams.get('subject') || 'math'
@@ -68,13 +71,11 @@ export default function EducationPage() {
 
     const subjectId = subjectIdMap[subjectParam] || 'mathematics'
     const subject = getSubjectById(subjectId)
-    console.log('教育页面 - URL参数:', subjectParam, '映射ID:', subjectId, '学科数据:', subject)
     setCurrentSubject(subject)
   }, [searchParams])
 
   // 知识点点击处理
   const handleKnowledgePointClick = (knowledgePoint: KnowledgePoint) => {
-    console.log('学科页面 - 知识点点击处理:', knowledgePoint.title)
     setSelectedKnowledgePoint(knowledgePoint)
     setIsKnowledgeCardOpen(true)
   }
@@ -93,6 +94,11 @@ export default function EducationPage() {
   const handleSearch = useCallback((value: string) => {
     setSearchQuery(value)
   }, [setSearchQuery])
+
+  // 搜索结果更新处理函数
+  const handleSearchResultsUpdate = useCallback((results: { filtered: number; total: number }) => {
+    setSearchResults(results)
+  }, [])
 
   // 使用真实的学习进度数据
   const progressData = {
@@ -216,7 +222,7 @@ export default function EducationPage() {
                   </div>
                   {searchQuery && (
                     <div className="mt-2 text-xs text-gray-300">
-                      找到 {filteredNodes.length} / {graphNodes.length} 个节点
+                      找到 {searchResults.filtered} / {searchResults.total} 个知识点
                     </div>
                   )}
                 </div>
@@ -257,6 +263,7 @@ export default function EducationPage() {
               subjectId={currentSubject?.id || 'mathematics'}
               onKnowledgePointClick={handleKnowledgePointClick}
               onProgressUpdate={handleProgressUpdate}
+              onSearchResultsUpdate={handleSearchResultsUpdate}
             />
           </div>
         </motion.div>

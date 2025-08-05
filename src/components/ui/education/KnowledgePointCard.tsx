@@ -331,10 +331,17 @@ export function KnowledgePointCard({ knowledgePoint, isOpen, onClose, className 
     try {
       // 构建知识点上下文
       const context = {
-        knowledgePoint: knowledgePoint.title,
-        subject: '数学',
-        difficulty: knowledgePoint.difficulty,
-        description: knowledgePoint.description
+        currentKnowledgePoint: knowledgePoint,
+        relatedPoints: [],
+        userProgress: {
+          subjectProgress: [],
+          totalPoints: 0,
+          level: 1,
+          achievements: [],
+          streakDays: 0,
+          lastStudyDate: new Date()
+        },
+        difficulty: knowledgePoint.difficulty
       }
 
       // 调用真实的AI服务

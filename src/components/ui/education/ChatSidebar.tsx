@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   MessageCircle, 
@@ -26,67 +26,11 @@ interface ChatSidebarProps {
 export function ChatSidebar({ isOpen, onToggle, className = '' }: ChatSidebarProps) {
   const [isMinimized, setIsMinimized] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [width, setWidth] = useState(400) // 默认宽度
-  const [isResizing, setIsResizing] = useState(false)
-  const [lastUpdateTime, setLastUpdateTime] = useState(0)
-  const [startX, setStartX] = useState(0)
-  const [startWidth, setStartWidth] = useState(0)
   const { chatHistory, clearHistory } = useAI()
 
   const handleMinimize = () => {
     setIsMinimized(!isMinimized)
   }
-
-  // 拉伸处理函数
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return
-
-    const newWidth = window.innerWidth - e.clientX
-    const minWidth = 300 // 最小宽度
-    const maxWidth = Math.min(800, window.innerWidth * 0.8) // 最大宽度
-
-    setWidth(Math.max(minWidth, Math.min(maxWidth, newWidth)))
-  }, [isResizing])
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false)
-    document.removeEventListener('mousemove', handleMouseMove)
-    document.removeEventListener('mouseup', handleMouseUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }, [handleMouseMove])
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    // 记录初始位置和宽度
-    setStartX(e.clientX)
-    setStartWidth(width)
-    setIsResizing(true)
-    setLastUpdateTime(0)
-
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-
-    document.addEventListener('mousemove', handleMouseMove, { passive: false })
-    document.addEventListener('mouseup', handleMouseUp, { passive: false })
-  }, [handleMouseMove, handleMouseUp, width])
-
-  // 双击重置宽度
-  const handleDoubleClick = useCallback(() => {
-    setWidth(400) // 重置为默认宽度
-  }, [])
-
-
-
-  // 清理事件监听器
-  useEffect(() => {
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [handleMouseMove, handleMouseUp])
 
   const handleClearHistory = () => {
     if (window.confirm('确定要清除所有聊天记录吗？')) {
@@ -147,30 +91,15 @@ export function ChatSidebar({ isOpen, onToggle, className = '' }: ChatSidebarPro
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className={`fixed right-0 top-0 h-full bg-gray-900/95 backdrop-blur-xl border-l border-gray-700 z-50 flex flex-col ${className} ${isResizing ? 'select-none border-l-2 border-l-blue-500' : ''}`}
+            className={`fixed right-0 top-0 h-full w-96 bg-gray-900/95 backdrop-blur-xl border-l border-gray-700 z-50 flex flex-col ${className}`}
             initial={{ x: '100%' }}
             animate={{
               x: 0,
-              width: isMinimized ? '80px' : `${width}px`
+              width: isMinimized ? '80px' : '384px'
             }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            style={{ width: isMinimized ? '80px' : `${width}px` }}
           >
-            {/* 拉伸手柄 */}
-            {!isMinimized && (
-              <div
-                className={`absolute left-0 top-0 w-2 h-full cursor-col-resize bg-transparent hover:bg-blue-500/30 transition-colors z-10 ${isResizing ? 'bg-blue-500/50' : ''}`}
-                onMouseDown={handleMouseDown}
-                onDoubleClick={handleDoubleClick}
-                title="拖拽调整宽度，双击重置"
-              >
-                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-12 bg-gray-500 rounded-r opacity-0 hover:opacity-100 transition-opacity">
-                  <div className="absolute left-1 top-1/2 transform -translate-y-1/2 w-0.5 h-6 bg-gray-400 rounded" />
-                </div>
-              </div>
-            )}
-
             {/* 头部控制栏 */}
             <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-700">
               {!isMinimized && (
@@ -186,11 +115,6 @@ export function ChatSidebar({ isOpen, onToggle, className = '' }: ChatSidebarPro
                   <div>
                     <div className="flex items-center space-x-2">
                       <h3 className="text-white font-medium text-sm">AI助手</h3>
-                      {isResizing && (
-                        <span className="text-xs text-blue-400 bg-blue-500/20 px-2 py-1 rounded">
-                          {width}px
-                        </span>
-                      )}
                     </div>
                     <p className="text-gray-400 text-xs">
                       {chatHistory.length > 0 ? `${chatHistory.length} 条消息` : '开始对话'}

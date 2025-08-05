@@ -4,6 +4,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 导入现代网格样式 */
+@import '../styles/modern-grid.css';
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-rgb: 255, 255, 255;
